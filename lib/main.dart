@@ -6,6 +6,9 @@ void main() {
   runApp(const TaskApp());
 }
 
+/// ======================
+/// ROOT APP
+/// ======================
 class TaskApp extends StatelessWidget {
   const TaskApp({super.key});
 
@@ -23,16 +26,31 @@ class TaskApp extends StatelessWidget {
   }
 }
 
+/// ======================
+/// TASK MODEL (PURE DART)
+/// ======================
 class Task {
-  String title;
-  bool done;
+  final String title;
+  final bool done;
 
-  Task({required this.title, this.done = false});
+  const Task({
+    required this.title,
+    this.done = false,
+  });
 
-  Map<String, dynamic> toJson() => {
-    'title': title,
-    'done': done,
-  };
+  Task copyWith({String? title, bool? done}) {
+    return Task(
+      title: title ?? this.title,
+      done: done ?? this.done,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'title': title,
+      'done': done,
+    };
+  }
 
   factory Task.fromJson(Map<String, dynamic> json) {
     return Task(
@@ -42,6 +60,9 @@ class Task {
   }
 }
 
+/// ======================
+/// HOME SCREEN
+/// ======================
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -51,12 +72,13 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
-  final TextEditingController controller = TextEditingController();
+  final TextEditingController _controller = TextEditingController();
+  List<Task> _tasks = [];
 
   late AnimationController _animController;
   late Animation<double> _fadeAnim;
 
-  List<Task> tasks = [];
+  static const String storageKey = "tasks";
 
   @override
   void initState() {
@@ -67,78 +89,91 @@ class _HomeScreenState extends State<HomeScreen>
       duration: const Duration(milliseconds: 700),
     );
 
-    _fadeAnim =
-        CurvedAnimation(parent: _animController, curve: Curves.easeOut);
+    _fadeAnim = CurvedAnimation(
+      parent: _animController,
+      curve: Curves.easeOut,
+    );
 
     _animController.forward();
-
-    loadTasks();
+    _loadTasks();
   }
 
   @override
   void dispose() {
+    _controller.dispose();
     _animController.dispose();
-    controller.dispose();
     super.dispose();
   }
 
-  Future<void> loadTasks() async {
+  /// ======================
+  /// LOCAL STORAGE
+  /// ======================
+  Future<void> _loadTasks() async {
     final prefs = await SharedPreferences.getInstance();
-
-    final data = prefs.getStringList('tasks') ?? [];
+    final data = prefs.getStringList(storageKey) ?? [];
 
     setState(() {
-      tasks = data.map((e) => Task.fromJson(jsonDecode(e))).toList();
+      _tasks = data
+          .map((e) => Task.fromJson(jsonDecode(e)))
+          .toList();
     });
   }
 
-  Future<void> saveTasks() async {
+  Future<void> _saveTasks() async {
     final prefs = await SharedPreferences.getInstance();
 
     await prefs.setStringList(
-      'tasks',
-      tasks.map((e) => jsonEncode(e.toJson())).toList(),
+      storageKey,
+      _tasks.map((e) => jsonEncode(e.toJson())).toList(),
     );
   }
 
-  void addTask() {
-    if (controller.text.trim().isEmpty) return;
+  /// ======================
+  /// TASK ACTIONS
+  /// ======================
+  void _addTask() {
+    final text = _controller.text.trim();
+    if (text.isEmpty) return;
 
     setState(() {
-      tasks.add(Task(title: controller.text.trim()));
+      _tasks.add(Task(title: text));
     });
 
-    controller.clear();
-    saveTasks();
+    _controller.clear();
+    _saveTasks();
     Navigator.pop(context);
   }
 
-  void deleteTask(int index) {
+  void _deleteTask(int index) {
     setState(() {
-      tasks.removeAt(index);
+      _tasks.removeAt(index);
     });
 
-    saveTasks();
+    _saveTasks();
   }
 
-  void toggleTask(int index) {
+  void _toggleTask(int index) {
     setState(() {
-      tasks[index].done = !tasks[index].done;
+      final task = _tasks[index];
+      _tasks[index] = task.copyWith(done: !task.done);
     });
 
-    saveTasks();
+    _saveTasks();
   }
 
-  void showAddDialog() {
+  /// ======================
+  /// UI DIALOG
+  /// ======================
+  void _showAddDialog() {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
         ),
-        title: const Text("Add New Task"),
+        title: const Text("Add Task"),
         content: TextField(
-          controller: controller,
+          controller: _controller,
           decoration: const InputDecoration(
             hintText: "Enter task title",
           ),
@@ -149,7 +184,7 @@ class _HomeScreenState extends State<HomeScreen>
             child: const Text("Cancel"),
           ),
           ElevatedButton(
-            onPressed: addTask,
+            onPressed: _addTask,
             child: const Text("Add"),
           ),
         ],
@@ -157,28 +192,34 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  /// ======================
+  /// UI BUILD
+  /// ======================
   @override
   Widget build(BuildContext context) {
-    final completed = tasks.where((e) => e.done).length;
+    final completed = _tasks.where((t) => t.done).length;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FB),
 
       appBar: AppBar(
-        elevation: 0,
-        backgroundColor: Colors.transparent,
-        foregroundColor: Colors.black87,
-        centerTitle: true,
         title: const Text(
           "My Tasks",
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
+        centerTitle: true,
         actions: [
           IconButton(
-            onPressed: showAddDialog,
+            onPressed: _showAddDialog,
             icon: const Icon(Icons.add_task),
-          ),
+          )
         ],
+      ),
+
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _showAddDialog,
+        icon: const Icon(Icons.add),
+        label: const Text("Add Task"),
       ),
 
       body: FadeTransition(
@@ -187,108 +228,62 @@ class _HomeScreenState extends State<HomeScreen>
           padding: const EdgeInsets.all(16),
           child: Column(
             children: [
+              /// HEADER
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
-                    colors: [
-                      Color(0xFF5B67F1),
-                      Color(0xFF7D8BFF),
-                    ],
+                    colors: [Color(0xFF5B67F1), Color(0xFF7D8BFF)],
                   ),
                   borderRadius: BorderRadius.circular(24),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      "Today Progress",
-                      style: TextStyle(color: Colors.white70),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      "$completed of ${tasks.length} tasks completed",
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
+                child: Text(
+                  "$completed of ${_tasks.length} tasks completed",
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
 
-              const SizedBox(height: 18),
+              const SizedBox(height: 16),
 
+              /// TASK LIST
               Expanded(
-                child: tasks.isEmpty
-                    ? const Center(
-                  child: Text("No tasks yet"),
-                )
-                    : ListView.separated(
-                  itemCount: tasks.length,
-                  separatorBuilder: (_, __) =>
-                  const SizedBox(height: 10),
-                  itemBuilder: (context, index) {
-                    final task = tasks[index];
+                child: _tasks.isEmpty
+                    ? const Center(child: Text("No tasks yet"))
+                    : ListView.builder(
+                        itemCount: _tasks.length,
+                        itemBuilder: (context, index) {
+                          final task = _tasks[index];
 
-                    return Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(18),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Colors.black12,
-                            blurRadius: 8,
-                          )
-                        ],
-                      ),
-                      child: Row(
-                        children: [
-                          Checkbox(
-                            value: task.done,
-                            onChanged: (_) => toggleTask(index),
-                          ),
-                          Expanded(
-                            child: Text(
-                              task.title,
-                              style: TextStyle(
-                                fontSize: 16,
-                                decoration: task.done
-                                    ? TextDecoration.lineThrough
-                                    : null,
-                                color: task.done
-                                    ? Colors.grey
-                                    : Colors.black87,
+                          return Card(
+                            child: ListTile(
+                              leading: Checkbox(
+                                value: task.done,
+                                onChanged: (_) => _toggleTask(index),
+                              ),
+                              title: Text(
+                                task.title,
+                                style: TextStyle(
+                                  decoration: task.done
+                                      ? TextDecoration.lineThrough
+                                      : null,
+                                ),
+                              ),
+                              trailing: IconButton(
+                                icon: const Icon(Icons.delete),
+                                onPressed: () => _deleteTask(index),
                               ),
                             ),
-                          ),
-                          IconButton(
-                            onPressed: () => deleteTask(index),
-                            icon: const Icon(
-                              Icons.delete_outline,
-                              color: Colors.red,
-                            ),
-                          ),
-                        ],
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
               ),
             ],
           ),
-        ),
-      ),
-
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: showAddDialog,
-        icon: const Icon(Icons.add),
-        label: const Text(
-          "Add Task",
-          style: TextStyle(fontWeight: FontWeight.bold),
         ),
       ),
     );
